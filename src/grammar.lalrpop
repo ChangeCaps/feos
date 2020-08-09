@@ -1,0 +1,53 @@
+use crate::ast::*;
+use crate::memory::{Value, ValueType};
+
+grammar;
+
+pub Block: Block = {
+    Stmt* => Block {
+        statements: <>,
+    }
+}
+
+pub Stmt: Statement = {
+    <lo:@L> <statement:_Stmt> <hi:@R> => Statement {
+        statement,
+        span: Span::new(lo, hi),
+    }
+}
+
+_Stmt: _Statement = {
+    "let" <ident:Ident> "=" <val:Expr> ";" => _Statement::Let(ident, val),
+}
+
+pub Expr: Expression = {
+    <lo:@L> <expression:_Expr> <hi:@R> => Expression {
+        expression,
+        span: Span::new(lo, hi),
+    }
+}
+
+_Expr: _Expression = {
+    Literal => _Expression::Literal(<>),
+}
+
+pub Literal: Value = {
+    r"-?[0-9]+\.[0-9]+" => Value::F32(<>.parse().unwrap()),
+
+    r"-?[0-9]+" => Value::I32(<>.parse().unwrap()),
+
+    r#""[^"]*""# => Value::String(<>[1..<>.len() - 1].to_string()),
+}
+
+pub Path: Path = {
+    <modules:(<Ident> "::")*> <target:Ident> => {
+        Path {
+            modules,
+            target,
+        }
+    }
+}
+
+pub Ident: String = {
+    r"[_a-zA-Z][_a-zA-Z0-9]*" => <>.to_string(),
+}
