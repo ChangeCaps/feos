@@ -3,10 +3,21 @@ use crate::memory::{Value, ValueType};
 
 grammar;
 
+pub ProgramBlock: ProgramBlock = {
+    Stmt* => ProgramBlock { statements: <> },	
+}
+
 pub Block: Block = {
-    Stmt* => Block {
-        statements: <>,
-    }
+	<statements:Stmt*> <expression:ExprWithoutBlock?> => Block {
+		statements,
+		expression: expression.map(|e| Box::new(e)),
+		_return: false,
+	},
+	<statements:Stmt*> "return" <expression:ExprWithoutBlock?> ";"? => Block {
+		statements,
+		expression: expression.map(|e| Box::new(e)),
+		_return: true,
+	}
 }
 
 pub Stmt: Statement = {
@@ -18,17 +29,73 @@ pub Stmt: Statement = {
 
 _Stmt: _Statement = {
     "let" <ident:Ident> "=" <val:Expr> ";" => _Statement::Let(ident, val),
+	<target:Expr> "=" <val:Expr> ";" => _Statement::Assign(target, val),
+	"{" <Block> "}" => _Statement::Block(<>),
 }
 
 pub Expr: Expression = {
-    <lo:@L> <expression:_Expr> <hi:@R> => Expression {
+	ExprWithBlock => <>,
+	ExprWithoutBlock => <>,
+}
+
+pub ExprWithoutBlock: Expression = {
+	<lo:@L> <expression:_ExprWithoutBlock> <hi:@R> => Expression {
         expression,
         span: Span::new(lo, hi),
     }
 }
 
+pub ExprWithBlock: Expression = {
+    <lo:@L> <expression:_ExprWithBlock> <hi:@R> => Expression {
+        expression,
+        span: Span::new(lo, hi),
+    }
+}
+
+T0: _Expression = {
+	"(" <_Expr> ")" => <>,
+}
+
+T1: _Expression = {
+	<lo:@L> "*" <expr:_Expr> <hi:@R> => _Expression::Dereferece(
+		Box::new(
+			Expression {
+				expression: expr,
+				span: Span::new(lo, hi),
+			}
+		)
+	),
+	<lo:@L> "&" <expr:_Expr> <hi:@R> => _Expression::Reference(
+		Box::new(
+			Expression {
+				expression: expr,
+				span: Span::new(lo, hi),
+			}
+		)
+	),
+	T0 => <>,
+}
+
 _Expr: _Expression = {
-    Literal => _Expression::Literal(<>),
+	_ExprWithBlock => <>,
+	_ExprWithoutBlock => <>,
+}
+
+_ExprWithoutBlock: _Expression = {
+    Literal => _Expression::Literal(<>),	
+	<lo:@L> <ident:Ident> <hi:@R> => _Expression::Dereferece(
+		Box::new(
+			Expression { 
+				expression: _Expression::Variable(ident),  
+				span: Span::new(lo, hi),
+			}
+		)
+	),
+	T1 => <>,
+}
+
+_ExprWithBlock: _Expression = {	
+	"{" <Block> "}" => _Expression::Block(<>),
 }
 
 pub Literal: Value = {

@@ -1,12 +1,15 @@
 use ferrous::*;
 
 fn main() {
+    let source = include_str!("test.fe");
+    let program = ast::Program::new(source).unwrap();
     let mut runtime = runtime::Runtime::new();
     let mut scope = runtime::Scope::new();
-    let parser = grammar::StmtParser::new();
-    let source = include_str!("test.fe");
 
-    let stmt = parser.parse(source).unwrap();
+    println!("{:#?}", program);
 
-    stmt.evaluate(&mut runtime, &mut scope);
+    program.run(&mut runtime, &mut scope).unwrap();
+
+    println!("{:#?}", runtime);
+    println!("{:#?}", scope);
 }

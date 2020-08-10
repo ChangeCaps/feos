@@ -1,1 +1,5 @@
-let test_wackadoodle = -42.69;
+let x = -42.69;
+
+let xr = &x;
+let y = xr;
+x = *y;

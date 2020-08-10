@@ -1,5 +1,5 @@
+use crate::ast::{RuntimeError::*, Span, SpannedRuntimeError};
 use std::collections::HashMap;
-use crate::ast::{RuntimeError, _RuntimeError::*, Span};
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub struct MemoryID(u32);
@@ -17,6 +17,7 @@ pub enum Value {
     String(String),
     Ref(MemoryID, ValueType),
     TraitObject(MemoryID, Vec<String>),
+    Null,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -26,6 +27,7 @@ pub enum ValueType {
     String,
     Ref(Box<ValueType>),
     TraitObject(Vec<String>),
+    Null,
 }
 
 impl Value {
@@ -36,10 +38,12 @@ impl Value {
             Value::String(_) => ValueType::String,
             Value::Ref(_, ty) => ValueType::Ref(Box::new(ty.clone())),
             Value::TraitObject(_, traits) => ValueType::TraitObject(traits.clone()),
+            Value::Null => ValueType::Null,
         }
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct MemoryEntry {
     value: Value,
     references: u32,
@@ -71,6 +75,7 @@ impl MemoryEntry {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Memory {
     memory: HashMap<MemoryID, MemoryEntry>,
     next_id: MemoryID,
@@ -91,11 +96,11 @@ impl Memory {
 
         let id = self.next_id;
         self.next_id = self.next_id.next();
-    
+
         id
     }
 
-    pub fn remove(&mut self, id: &MemoryID) -> Result<(), RuntimeError> {
+    pub fn remove(&mut self, id: &MemoryID) -> Result<(), SpannedRuntimeError> {
         if let Some(entry) = self.memory.get_mut(id) {
             if entry.remove_reference() {
                 self.memory.remove(id);
@@ -103,23 +108,33 @@ impl Memory {
 
             Ok(())
         } else {
-            Err(RuntimeError::new(InvalidMemoryID, Span::new(0, 0)))
+            Err(SpannedRuntimeError::new(InvalidMemoryID))
         }
     }
 
-    pub fn get(&self, id: &MemoryID) -> Result<&Value, RuntimeError> {
+    pub fn add_reference(&mut self, id: &MemoryID) -> Result<(), SpannedRuntimeError> {
+        if let Some(entry) = self.memory.get_mut(id) {
+            entry.add_reference();
+
+            Ok(())
+        } else {
+            Err(SpannedRuntimeError::new(InvalidMemoryID))
+        }
+    }
+
+    pub fn get(&self, id: &MemoryID) -> Result<&Value, SpannedRuntimeError> {
         if let Some(entry) = self.memory.get(id) {
             Ok(&entry.value)
         } else {
-            Err(RuntimeError::new(InvalidMemoryID, Span::new(0, 0)))
+            Err(SpannedRuntimeError::new(InvalidMemoryID))
         }
     }
 
-    pub fn get_mut(&mut self, id: &MemoryID) -> Result<&mut Value, RuntimeError> {
+    pub fn get_mut(&mut self, id: &MemoryID) -> Result<&mut Value, SpannedRuntimeError> {
         if let Some(entry) = self.memory.get_mut(id) {
             Ok(&mut entry.value)
         } else {
-            Err(RuntimeError::new(InvalidMemoryID, Span::new(0, 0)))
+            Err(SpannedRuntimeError::new(InvalidMemoryID))
         }
     }
 }

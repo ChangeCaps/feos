@@ -2,6 +2,7 @@ use crate::ast::*;
 use crate::memory::*;
 use std::collections::HashMap;
 
+#[derive(Clone, Debug)]
 pub struct Scope {
     variables: HashMap<String, (MemoryID, ValueType)>,
 }
@@ -22,8 +23,9 @@ impl Scope {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Runtime {
-    pub(crate) memory: Memory,    
+    pub(crate) memory: Memory,
 }
 
 impl Runtime {
