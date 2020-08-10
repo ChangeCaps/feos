@@ -4,60 +4,62 @@ use crate::memory::{Value, ValueType};
 grammar;
 
 pub ProgramBlock: ProgramBlock = {
-    Stmt* => ProgramBlock { statements: <> },	
+    Statement* => ProgramBlock { statements: <> },	
 }
 
 pub Block: Block = {
-	<statements:Stmt*> <expression:ExprWithoutBlock?> => Block {
+	<statements:Statement*> <expression:ExpressionWithoutBlock?> => Block {
 		statements,
 		expression: expression.map(|e| Box::new(e)),
-		_return: false,
 	},
-	<statements:Stmt*> "return" <expression:ExprWithoutBlock?> ";"? => Block {
-		statements,
-		expression: expression.map(|e| Box::new(e)),
-		_return: true,
-	}
 }
 
-pub Stmt: Statement = {
-    <lo:@L> <statement:_Stmt> <hi:@R> => Statement {
+pub Statement: Statement = {
+    <lo:@L> <statement:_Statement> <hi:@R> => Statement {
         statement,
         span: Span::new(lo, hi),
     }
 }
 
-_Stmt: _Statement = {
-    "let" <ident:Ident> "=" <val:Expr> ";" => _Statement::Let(ident, val),
-	<target:Expr> "=" <val:Expr> ";" => _Statement::Assign(target, val),
-	"{" <Block> "}" => _Statement::Block(<>),
+_Statement: _Statement = {
+    LetStatement => <>,
+	ExpressionStatement => <>,
 }
 
-pub Expr: Expression = {
-	ExprWithBlock => <>,
-	ExprWithoutBlock => <>,
+LetStatement: _Statement = {
+	"let" <ident:Ident> (":" ValueType)? "=" <val:Expression> ";" => _Statement::Let(ident, val),
 }
 
-pub ExprWithoutBlock: Expression = {
-	<lo:@L> <expression:_ExprWithoutBlock> <hi:@R> => Expression {
+ExpressionStatement: _Statement = {
+	<ExpressionWithoutBlock> ";" => _Statement::Expression(<>),
+	<ExpressionWithBlock> ";"? => _Statement::Expression(<>),
+}
+
+pub Expression: Expression = {
+	ExpressionWithBlock => <>,
+	ExpressionWithoutBlock => <>,
+}
+
+pub ExpressionWithoutBlock: Expression = {
+	<lo:@L> <expression:_ExpressionWithoutBlock> <hi:@R> => Expression {
         expression,
         span: Span::new(lo, hi),
-    }
+    },
 }
 
-pub ExprWithBlock: Expression = {
-    <lo:@L> <expression:_ExprWithBlock> <hi:@R> => Expression {
+pub ExpressionWithBlock: Expression = {
+    <lo:@L> <expression:_ExpressionWithBlock> <hi:@R> => Expression {
         expression,
         span: Span::new(lo, hi),
     }
 }
 
 T0: _Expression = {
-	"(" <_Expr> ")" => <>,
+	"(" <_Expression> ")" => <>,
 }
 
 T1: _Expression = {
-	<lo:@L> "*" <expr:_Expr> <hi:@R> => _Expression::Dereferece(
+	<lo:@L> "*" <expr:_Expression> <hi:@R> => _Expression::Dereferece(
 		Box::new(
 			Expression {
 				expression: expr,
@@ -65,7 +67,7 @@ T1: _Expression = {
 			}
 		)
 	),
-	<lo:@L> "&" <expr:_Expr> <hi:@R> => _Expression::Reference(
+	<lo:@L> "&" <expr:_Expression> <hi:@R> => _Expression::Reference(
 		Box::new(
 			Expression {
 				expression: expr,
@@ -76,12 +78,12 @@ T1: _Expression = {
 	T0 => <>,
 }
 
-_Expr: _Expression = {
-	_ExprWithBlock => <>,
-	_ExprWithoutBlock => <>,
+_Expression: _Expression = {
+	_ExpressionWithBlock => <>,
+	_ExpressionWithoutBlock => <>,
 }
 
-_ExprWithoutBlock: _Expression = {
+_ExpressionWithoutBlock: _Expression = {
     Literal => _Expression::Literal(<>),	
 	<lo:@L> <ident:Ident> <hi:@R> => _Expression::Dereferece(
 		Box::new(
@@ -94,7 +96,7 @@ _ExprWithoutBlock: _Expression = {
 	T1 => <>,
 }
 
-_ExprWithBlock: _Expression = {	
+_ExpressionWithBlock: _Expression = {	
 	"{" <Block> "}" => _Expression::Block(<>),
 }
 
@@ -115,6 +117,19 @@ pub Path: Path = {
     }
 }
 
-pub Ident: String = {
+Ident: String = {
     r"[_a-zA-Z][_a-zA-Z0-9]*" => <>.to_string(),
+}
+
+ValueType: ValueType = {
+	"i32" => ValueType::I32,
+	"f32" => ValueType::F32,
+	"str" => ValueType::String,
+	"(" ")" => ValueType::Null,
+	"&" <ValueType> => ValueType::Ref(Box::new(<>)),
+	"dyn" <mut vec:(<Ident> "+")+> <last:Ident> => {
+		vec.push(last);
+
+		ValueType::TraitObject(vec)
+	}
 }

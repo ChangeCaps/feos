@@ -1,5 +1,5 @@
-let x = -42.69;
-
-let xr = &x;
-let y = xr;
-x = *y;
+let x = {
+    {
+        42.0
+    }
+};

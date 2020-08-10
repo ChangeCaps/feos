@@ -78,7 +78,6 @@ pub struct ProgramBlock {
 pub struct Block {
     pub statements: Vec<Statement>,
     pub expression: Option<Box<Expression>>,
-    pub _return: bool,
 }
 
 impl Block {
@@ -164,6 +163,7 @@ impl Statement {
         match &self.statement {
             _Statement::Let(ident, val) => {
                 let val = r!(val.evaluate(program, runtime, scope)?);
+                val.val_clone(runtime)?;
                 let ty = val.ty();
                 let id = runtime.memory.insert(val);
                 scope.insert(ident, id, ty);
@@ -172,16 +172,23 @@ impl Statement {
             }
 
             _Statement::Assign(trg, val) => {
+                // unwrap the target to find a reference
                 let trg = match &trg.expression {
                     _Expression::Dereferece(e) => r!(e.evaluate(program, runtime, scope)?),
-                    _ => r!(trg.evaluate(program, runtime, scope)?),
+                    _ => return Err(SpannedRuntimeError::with_span(InvalidAssignTarget, self.span))
                 };
 
+                // make sure the expression gave you a reference
                 if let Value::Ref(id, ty) = &trg {
                     let val = r!(val.evaluate(program, runtime, scope)?);
 
+                    // insure trg and val have the same type
                     if val.ty() == *ty {
-                        *runtime.memory.get_mut(id)? = val;
+                        val.val_clone(runtime)?;
+
+                        runtime.memory.get(id)?.clone().drop(runtime)?; // drop the previous value, in targets place
+                        
+                        *runtime.memory.get_mut(id)? = val; // replace target with val
 
                         Ok(ControlFlow::None(Value::Null))
                     } else {
@@ -254,9 +261,9 @@ impl Expression {
                 let reference = r!(reference.evaluate(program, runtime, scope)?);
 
                 if let Value::Ref(id, _) = &reference {
-                    let val = runtime.memory.get(id)?;
+                    let val = runtime.memory.get(id)?.clone();
 
-                    Ok(ControlFlow::None(val.clone()))
+                    Ok(ControlFlow::None(val))
                 } else {
                     Err(SpannedRuntimeError::with_span(
                         InvalidDerefTarget,
@@ -272,8 +279,6 @@ impl Expression {
                 };
 
                 if let Value::Ref(id, ty) = &target {
-                    runtime.memory.add_reference(id)?;
-
                     Ok(ControlFlow::None(Value::Ref(*id, ty.clone())))
                 } else {
                     Err(SpannedRuntimeError::with_span(

@@ -41,6 +41,28 @@ impl Value {
             Value::Null => ValueType::Null,
         }
     }
+
+    pub fn val_clone(&self, runtime: &mut crate::runtime::Runtime) -> Result<(), SpannedRuntimeError> {
+        match self {
+            Value::Ref(id, _) => {
+                runtime.memory.add_reference(id)?;
+
+                Ok(())
+            }
+            _ => Ok(())
+        }
+    }
+
+    pub fn drop(&self, runtime: &mut crate::runtime::Runtime) -> Result<(), SpannedRuntimeError> {
+        match self {
+            Value::Ref(id, _) => {
+                runtime.memory.remove(id)?;
+            }
+            _ => ()
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
