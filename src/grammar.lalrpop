@@ -7,14 +7,21 @@ pub ProgramBlock: ProgramBlock = {
     Statement* => ProgramBlock { statements: <> },	
 }
 
-pub Block: Block = {
-	<statements:Statement*> <expression:ExpressionWithoutBlock?> => Block {
+Block: Block = {
+	<statements:Statement*> <expression:Expression> => Block {
 		statements,
-		expression: expression.map(|e| Box::new(e)),
+		expression: Some(Box::new(expression)),
 	},
 }
 
-pub Statement: Statement = {
+UnitBlock: Block = {
+	<statements:Statement*> => Block {
+		statements,
+		expression: None,
+	}
+}
+
+Statement: Statement = {
     <lo:@L> <statement:_Statement> <hi:@R> => Statement {
         statement,
         span: Span::new(lo, hi),
@@ -31,8 +38,8 @@ LetStatement: _Statement = {
 }
 
 ExpressionStatement: _Statement = {
-	<ExpressionWithoutBlock> ";" => _Statement::Expression(<>),
-	<ExpressionWithBlock> ";"? => _Statement::Expression(<>),
+	<Expression> ";" => _Statement::Expression(<>),
+	<ExpressionWithUnitBlock> => _Statement::Expression(<>),
 }
 
 pub Expression: Expression = {
@@ -40,64 +47,66 @@ pub Expression: Expression = {
 	ExpressionWithoutBlock => <>,
 }
 
-pub ExpressionWithoutBlock: Expression = {
-	<lo:@L> <expression:_ExpressionWithoutBlock> <hi:@R> => Expression {
-        expression,
-        span: Span::new(lo, hi),
-    },
+T0: Expression = {
+	"(" <Expression> ")" => <>,
+
+	<lo:@L> <lit:Literal> <hi:@R> => Expression {
+		expression: _Expression::Literal(lit),	
+		span: Span::new(lo, hi),
+	},
+
+	<lo:@L> <ident:Ident> <hi:@R> => Expression { 
+		expression: _Expression::Dereferece(
+			Box::new(
+				Expression { 
+					expression: _Expression::Variable(ident),  
+					span: Span::new(lo, hi),
+				}
+			)
+		),
+		span: Span::new(lo, hi),
+	}
 }
 
-pub ExpressionWithBlock: Expression = {
-    <lo:@L> <expression:_ExpressionWithBlock> <hi:@R> => Expression {
-        expression,
-        span: Span::new(lo, hi),
-    }
-}
+T1: Expression = {
+	<lo:@L> "*" <expr:T1> <hi:@R> => Expression {
+		expression: _Expression::Dereferece(Box::new(expr)),
+		span: Span::new(lo, hi),
+	},
 
-T0: _Expression = {
-	"(" <_Expression> ")" => <>,
-}
+	<lo:@L> "&" <expr:T1> <hi:@R> => Expression {
+		expression: _Expression::Reference(Box::new(expr)),
+		span: Span::new(lo, hi),
+	},
 
-T1: _Expression = {
-	<lo:@L> "*" <expr:_Expression> <hi:@R> => _Expression::Dereferece(
-		Box::new(
-			Expression {
-				expression: expr,
-				span: Span::new(lo, hi),
-			}
-		)
-	),
-	<lo:@L> "&" <expr:_Expression> <hi:@R> => _Expression::Reference(
-		Box::new(
-			Expression {
-				expression: expr,
-				span: Span::new(lo, hi),
-			}
-		)
-	),
 	T0 => <>,
 }
 
-_Expression: _Expression = {
-	_ExpressionWithBlock => <>,
-	_ExpressionWithoutBlock => <>,
+T2: Expression = {
+	<lo:@L> <target:T2> "=" <value:T1> <hi:@R> => Expression {
+		expression: _Expression::Assign(Box::new(target), Box::new(value)),
+		span: Span::new(lo, hi),
+	},
+
+	T1 => <>
 }
 
-_ExpressionWithoutBlock: _Expression = {
-    Literal => _Expression::Literal(<>),	
-	<lo:@L> <ident:Ident> <hi:@R> => _Expression::Dereferece(
-		Box::new(
-			Expression { 
-				expression: _Expression::Variable(ident),  
-				span: Span::new(lo, hi),
-			}
-		)
-	),
-	T1 => <>,
+ExpressionWithoutBlock: Expression = {
+	T2 => <>,
 }
 
-_ExpressionWithBlock: _Expression = {	
-	"{" <Block> "}" => _Expression::Block(<>),
+ExpressionWithBlock: Expression = {
+	<lo:@L> "{" <block:Block> "}" <hi:@R> => Expression {
+		expression: _Expression::Block(block),
+		span: Span::new(lo, hi),
+	},
+}
+
+ExpressionWithUnitBlock: Expression = {
+	<lo:@L> "{" <block:UnitBlock> "}" <hi:@R> => Expression {
+		expression: _Expression::Block(block),
+		span: Span::new(lo, hi),
+	},
 }
 
 pub Literal: Value = {

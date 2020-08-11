@@ -133,7 +133,6 @@ pub enum ControlFlow {
 #[derive(Debug)]
 pub enum _Statement {
     Let(String, Expression),
-    Assign(Expression, Expression),
     Expression(Expression),
     Block(Block),
 }
@@ -171,40 +170,6 @@ impl Statement {
                 Ok(ControlFlow::None(Value::Null))
             }
 
-            _Statement::Assign(trg, val) => {
-                // unwrap the target to find a reference
-                let trg = match &trg.expression {
-                    _Expression::Dereferece(e) => r!(e.evaluate(program, runtime, scope)?),
-                    _ => return Err(SpannedRuntimeError::with_span(InvalidAssignTarget, self.span))
-                };
-
-                // make sure the expression gave you a reference
-                if let Value::Ref(id, ty) = &trg {
-                    let val = r!(val.evaluate(program, runtime, scope)?);
-
-                    // insure trg and val have the same type
-                    if val.ty() == *ty {
-                        val.val_clone(runtime)?;
-
-                        runtime.memory.get(id)?.clone().drop(runtime)?; // drop the previous value, in targets place
-                        
-                        *runtime.memory.get_mut(id)? = val; // replace target with val
-
-                        Ok(ControlFlow::None(Value::Null))
-                    } else {
-                        Err(SpannedRuntimeError::with_span(
-                            InequalLeftRightHandTypes,
-                            self.span,
-                        ))
-                    }
-                } else {
-                    Err(SpannedRuntimeError::with_span(
-                        InvalidAssignTarget,
-                        self.span,
-                    ))
-                }
-            }
-
             _Statement::Expression(expr) => {
                 r!(expr.evaluate(program, runtime, scope)?);
                 Ok(ControlFlow::None(Value::Null))
@@ -219,6 +184,7 @@ impl Statement {
 pub enum _Expression {
     Literal(Value),
     Variable(String),
+    Assign(Box<Expression>, Box<Expression>),
     Dereferece(Box<Expression>),
     Reference(Box<Expression>),
     Block(Block),
@@ -254,6 +220,45 @@ impl Expression {
                     Ok(ControlFlow::None(Value::Ref(id.clone(), ty.clone())))
                 } else {
                     Err(SpannedRuntimeError::with_span(UndefinedVariable, self.span))
+                }
+            }
+
+            _Expression::Assign(trg, val) => {
+                // unwrap the target to find a reference
+                let trg = match &trg.expression {
+                    _Expression::Dereferece(e) => r!(e.evaluate(program, runtime, scope)?),
+                    _ => {
+                        return Err(SpannedRuntimeError::with_span(
+                            InvalidAssignTarget,
+                            self.span,
+                        ))
+                    }
+                };
+
+                // make sure the expression gave you a reference
+                if let Value::Ref(id, ty) = &trg {
+                    let val = r!(val.evaluate(program, runtime, scope)?);
+
+                    // insure trg and val have the same type
+                    if val.ty() == *ty {
+                        val.val_clone(runtime)?;
+
+                        runtime.memory.get(id)?.clone().drop(runtime)?; // drop the previous value, in targets place
+
+                        *runtime.memory.get_mut(id)? = val; // replace target with val
+
+                        Ok(ControlFlow::None(Value::Null))
+                    } else {
+                        Err(SpannedRuntimeError::with_span(
+                            InequalLeftRightHandTypes,
+                            self.span,
+                        ))
+                    }
+                } else {
+                    Err(SpannedRuntimeError::with_span(
+                        InvalidAssignTarget,
+                        self.span,
+                    ))
                 }
             }
 
