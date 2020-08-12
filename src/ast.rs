@@ -22,6 +22,8 @@ pub enum RuntimeError {
     InvalidReferenceTarget,
     InvaildReference,
     InvalidMemoryID,
+    InvalidNotTarget,
+    InvalidIfCheckType,
     InequalLeftRightHandTypes,
 }
 
@@ -188,6 +190,9 @@ pub enum _Expression {
     Dereferece(Box<Expression>),
     Reference(Box<Expression>),
     Block(Block),
+    Equal(Box<Expression>, Box<Expression>),
+    Not(Box<Expression>),
+    If(Box<Expression>, Box<Expression>, Option<Box<Expression>>),
 }
 
 #[derive(Debug)]
@@ -302,6 +307,51 @@ impl Expression {
                     expression.evaluate(program, runtime, scope)
                 } else {
                     Ok(ControlFlow::None(Value::Null))
+                }
+            }
+
+            _Expression::Equal(lhs, rhs) => {
+                let lhs = r!(lhs.evaluate(program, runtime, scope)?);
+                let rhs = r!(rhs.evaluate(program, runtime, scope)?);
+
+                if lhs.ty() == rhs.ty() {
+                    Ok(ControlFlow::None(Value::Bool(lhs == rhs)))
+                } else {
+                    Err(SpannedRuntimeError::with_span(
+                        InequalLeftRightHandTypes,
+                        self.span,
+                    ))
+                }
+            }
+
+            _Expression::Not(val) => {
+                let val = r!(val.evaluate(program, runtime, scope)?);
+
+                if let Value::Bool(val) = val {
+                    Ok(ControlFlow::None(Value::Bool(!val)))
+                } else {
+                    Err(SpannedRuntimeError::with_span(InvalidNotTarget, self.span))
+                }
+            }
+
+            _Expression::If(check, block, else_block) => {
+                let check = r!(check.evaluate(program, runtime, scope)?);
+
+                if let Value::Bool(check) = check {
+                    if check {
+                        block.evaluate(program, runtime, scope)
+                    } else {
+                        if let Some(else_block) = else_block {
+                            else_block.evaluate(program, runtime, scope)
+                        } else {
+                            Ok(ControlFlow::None(Value::Null))
+                        }
+                    }
+                } else {
+                    Err(SpannedRuntimeError::with_span(
+                        InvalidIfCheckType,
+                        self.span,
+                    ))
                 }
             }
         }

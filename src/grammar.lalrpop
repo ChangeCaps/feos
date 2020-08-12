@@ -42,7 +42,7 @@ ExpressionStatement: _Statement = {
 	<ExpressionWithUnitBlock> => _Statement::Expression(<>),
 }
 
-pub Expression: Expression = {
+Expression: Expression = {
 	ExpressionWithBlock => <>,
 	ExpressionWithoutBlock => <>,
 }
@@ -79,34 +79,97 @@ T1: Expression = {
 		span: Span::new(lo, hi),
 	},
 
+	<lo:@L> "!" <expr:T1> <hi:@R> => Expression {
+		expression: _Expression::Not(Box::new(expr)),
+		span: Span::new(lo, hi),
+	},
+
 	T0 => <>,
 }
 
 T2: Expression = {
-	<lo:@L> <target:T2> "=" <value:T1> <hi:@R> => Expression {
+	<lo:@L> <lhs:T2> "==" <rhs:T1> <hi:@R> => Expression {
+		expression: _Expression::Equal(Box::new(lhs), Box::new(rhs)),	
+		span: Span::new(lo, hi),
+	},
+
+	<lo:@L> <lhs:T2> "!=" <rhs:T1> <hi:@R> => Expression {
+		expression: _Expression::Not(
+			Box::new(Expression {
+				expression: _Expression::Equal(Box::new(lhs), Box::new(rhs)),	
+				span: Span::new(lo, hi),
+			})
+		),
+		span: Span::new(lo, hi),
+	},
+
+	T1 => <>,
+}
+
+T3: Expression = {
+	<lo:@L> <target:T3> "=" <value:T2> <hi:@R> => Expression {
 		expression: _Expression::Assign(Box::new(target), Box::new(value)),
 		span: Span::new(lo, hi),
 	},
 
-	T1 => <>
+	T2 => <>
 }
 
 ExpressionWithoutBlock: Expression = {
-	T2 => <>,
+	T3 => <>,
 }
 
-ExpressionWithBlock: Expression = {
+BlockExpression: Expression = {
 	<lo:@L> "{" <block:Block> "}" <hi:@R> => Expression {
 		expression: _Expression::Block(block),
 		span: Span::new(lo, hi),
 	},
 }
 
-ExpressionWithUnitBlock: Expression = {
+IfExpression: Expression = {
+	<lo:@L> "if" <check:Expression> <block:BlockExpression> "else" <else_block:BlockExpression> <hi:@R> => Expression {
+		expression: _Expression::If(Box::new(check), Box::new(block), Some(Box::new(else_block))),
+		span: Span::new(lo, hi),
+	},
+
+	<lo:@L> "if" <check:Expression> <block:BlockExpression> "else" <else_block:IfExpression> <hi:@R> => Expression {
+		expression: _Expression::If(Box::new(check), Box::new(block), Some(Box::new(else_block))),
+		span: Span::new(lo, hi),
+	},
+}
+
+ExpressionWithBlock: Expression = {
+	BlockExpression => <>,	
+	IfExpression => <>,
+}
+
+UnitBlockExpression: Expression = {
 	<lo:@L> "{" <block:UnitBlock> "}" <hi:@R> => Expression {
 		expression: _Expression::Block(block),
 		span: Span::new(lo, hi),
 	},
+}
+
+UnitIfExpression: Expression = {
+	<lo:@L> "if" <check:Expression> <block:UnitBlockExpression> <hi:@R> => Expression {
+		expression: _Expression::If(Box::new(check), Box::new(block), None),
+		span: Span::new(lo, hi),
+	},
+
+	<lo:@L> "if" <check:Expression> <block:UnitBlockExpression> "else" <else_block:UnitBlockExpression> <hi:@R> => Expression {
+		expression: _Expression::If(Box::new(check), Box::new(block), Some(Box::new(else_block))),
+		span: Span::new(lo, hi),
+	},
+
+	<lo:@L> "if" <check:Expression> <block:UnitBlockExpression> "else" <else_block:UnitIfExpression> <hi:@R> => Expression {
+		expression: _Expression::If(Box::new(check), Box::new(block), Some(Box::new(else_block))),
+		span: Span::new(lo, hi),
+	},
+}
+
+ExpressionWithUnitBlock: Expression = {
+	UnitBlockExpression => <>,
+	UnitIfExpression => <>,
 }
 
 pub Literal: Value = {
@@ -115,6 +178,9 @@ pub Literal: Value = {
     r"-?[0-9]+" => Value::I32(<>.parse().unwrap()),
 
     r#""[^"]*""# => Value::String(<>[1..<>.len() - 1].to_string()),
+
+	"true" => Value::Bool(true),
+	"false" => Value::Bool(false),
 }
 
 pub Path: Path = {

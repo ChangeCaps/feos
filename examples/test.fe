@@ -1,5 +1,5 @@
-let x = 42;
-
-let y = &x;
-
-x = *y;
+let x = if true {
+	42
+} else {
+	24
+};

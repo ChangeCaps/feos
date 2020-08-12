@@ -14,6 +14,7 @@ impl MemoryID {
 pub enum Value {
     I32(i32),
     F32(f32),
+    Bool(bool),
     String(String),
     Ref(MemoryID, ValueType),
     TraitObject(MemoryID, Vec<String>),
@@ -24,6 +25,7 @@ pub enum Value {
 pub enum ValueType {
     I32,
     F32,
+    Bool,
     String,
     Ref(Box<ValueType>),
     TraitObject(Vec<String>),
@@ -35,6 +37,7 @@ impl Value {
         match self {
             Value::I32(_) => ValueType::I32,
             Value::F32(_) => ValueType::F32,
+            Value::Bool(_) => ValueType::Bool,
             Value::String(_) => ValueType::String,
             Value::Ref(_, ty) => ValueType::Ref(Box::new(ty.clone())),
             Value::TraitObject(_, traits) => ValueType::TraitObject(traits.clone()),
@@ -42,14 +45,23 @@ impl Value {
         }
     }
 
-    pub fn val_clone(&self, runtime: &mut crate::runtime::Runtime) -> Result<(), SpannedRuntimeError> {
+    pub fn val_clone(
+        &self,
+        runtime: &mut crate::runtime::Runtime,
+    ) -> Result<(), SpannedRuntimeError> {
         match self {
             Value::Ref(id, _) => {
                 runtime.memory.add_reference(id)?;
 
                 Ok(())
             }
-            _ => Ok(())
+            _ => Ok(()),
+        }
+    }
+
+    pub fn equal(&self, rhs: &Self) -> bool {
+        match self {
+            _ => self == rhs,
         }
     }
 
@@ -58,7 +70,7 @@ impl Value {
             Value::Ref(id, _) => {
                 runtime.memory.remove(id)?;
             }
-            _ => ()
+            _ => (),
         }
 
         Ok(())
