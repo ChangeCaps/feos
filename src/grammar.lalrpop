@@ -112,6 +112,11 @@ T3: Expression = {
 		span: Span::new(lo, hi),
 	},
 
+	<lo:@L> "return" <return_value:T2> <hi:@R> => Expression {
+		expression: _Expression::Return(Box::new(return_value)),
+		span: Span::new(lo, hi),
+	},
+
 	T2 => <>
 }
 

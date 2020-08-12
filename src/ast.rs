@@ -193,6 +193,7 @@ pub enum _Expression {
     Equal(Box<Expression>, Box<Expression>),
     Not(Box<Expression>),
     If(Box<Expression>, Box<Expression>, Option<Box<Expression>>),
+    Return(Box<Expression>),
 }
 
 #[derive(Debug)]
@@ -353,6 +354,12 @@ impl Expression {
                         self.span,
                     ))
                 }
+            }
+
+            _Expression::Return(return_value) => {
+                let return_value = r!(return_value.evaluate(program, runtime, scope)?);
+
+                Ok(ControlFlow::Return(return_value))
             }
         }
     }
