@@ -134,13 +134,13 @@ impl Memory {
         id
     }
 
-    pub fn remove(&mut self, id: &MemoryID) -> Result<(), SpannedRuntimeError> {
+    pub fn remove(&mut self, id: &MemoryID) -> Result<Option<Value>, SpannedRuntimeError> {
         if let Some(entry) = self.memory.get_mut(id) {
             if entry.remove_reference() {
-                self.memory.remove(id);
+                Ok(self.memory.remove(id).map(|entry| entry.value))
+            } else {
+                Ok(None)
             }
-
-            Ok(())
         } else {
             Err(SpannedRuntimeError::new(InvalidMemoryID))
         }

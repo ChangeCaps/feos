@@ -89,18 +89,24 @@ impl Block {
         runtime: &mut Runtime,
         scope: &mut Scope,
     ) -> Result<ControlFlow, SpannedRuntimeError> {
+        let mut scope = scope.sub();
+
         for statement in &self.statements {
-            match statement.evaluate(program, runtime, scope)? {
+            match statement.evaluate(program, runtime, &mut scope)? {
                 ControlFlow::Return(v) => return Ok(ControlFlow::Return(v)),
                 ControlFlow::None(_) => (),
             }
         }
 
-        if let Some(expression) = &self.expression {
-            expression.evaluate(program, runtime, scope)
+        let result = if let Some(expression) = &self.expression {
+            expression.evaluate(program, runtime, &mut scope)
         } else {
             Ok(ControlFlow::None(Value::Null))
-        }
+        };
+
+        scope.drop(runtime)?;
+
+        result
     }
 }
 
@@ -136,7 +142,6 @@ pub enum ControlFlow {
 pub enum _Statement {
     Let(String, Expression),
     Expression(Expression),
-    Block(Block),
 }
 
 #[derive(Debug)]
@@ -176,8 +181,6 @@ impl Statement {
                 r!(expr.evaluate(program, runtime, scope)?);
                 Ok(ControlFlow::None(Value::Null))
             }
-
-            _Statement::Block(block) => block.evaluate(program, runtime, scope),
         }
     }
 }
@@ -284,31 +287,34 @@ impl Expression {
             }
 
             _Expression::Reference(target) => {
-                let target = match &target.expression {
-                    _Expression::Dereferece(e) => r!(e.evaluate(program, runtime, scope)?),
-                    _ => r!(target.evaluate(program, runtime, scope)?),
-                };
+                match &target.expression {
+                    _Expression::Dereferece(e) => {
+                        let target = r!(e.evaluate(program, runtime, scope)?);
 
-                if let Value::Ref(id, ty) = &target {
-                    Ok(ControlFlow::None(Value::Ref(*id, ty.clone())))
-                } else {
-                    Err(SpannedRuntimeError::with_span(
-                        InvalidReferenceTarget,
-                        self.span,
-                    ))
+                        if let Value::Ref(id, ty) = &target {
+                            Ok(ControlFlow::None(Value::Ref(*id, ty.clone())))
+                        } else {
+                            Err(SpannedRuntimeError::with_span(
+                                InvalidReferenceTarget,
+                                self.span,
+                            ))
+                        }
+                    },
+
+                    _ => {
+                        let val = r!(target.evaluate(program, runtime, scope)?);
+                        let ty = val.ty();
+
+                        let id = runtime.memory.insert(val);
+                        scope.add(id);
+
+                        Ok(ControlFlow::None(Value::Ref(id, ty)))
+                    },
                 }
             }
 
             _Expression::Block(block) => {
-                for statement in &block.statements {
-                    r!(statement.evaluate(program, runtime, scope)?);
-                }
-
-                if let Some(expression) = &block.expression {
-                    expression.evaluate(program, runtime, scope)
-                } else {
-                    Ok(ControlFlow::None(Value::Null))
-                }
+                block.evaluate(program, runtime, scope)
             }
 
             _Expression::Equal(lhs, rhs) => {
