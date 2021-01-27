@@ -1,61 +1,67 @@
 use crate::ast::*;
-use crate::memory::*;
-use std::collections::HashMap;
+use crate::control_flow::*;
+use crate::error::*;
+use crate::fn_storage::*;
+use crate::scope::*;
+use crate::span::*;
+use crate::to_fn_input::*;
+use crate::variant::*;
 
-#[derive(Clone, Debug)]
-pub struct Scope {
-    variables: HashMap<String, (MemoryID, ValueType)>,
-    added: Vec<MemoryID>,
+pub struct Runtime<'a, T> {
+    pub ctx: &'a mut T,
+    pub source: String,
 }
 
-impl Scope {
-    pub fn new() -> Self {
-        Self {
-            variables: HashMap::new(),
-            added: Vec::new(),
+impl<'a, T> Runtime<'a, T> {
+    pub fn new(ctx: &'a mut T, source: String) -> Self {
+        Self { ctx, source }
+    }
+
+    pub fn run(&mut self, program: &Block, scope: &mut Scope<T>) -> Result<Union, Error> {
+        match self.eval_block(&program, scope) {
+            Ok(variable) | Err(ControlFlow::Return(variable)) => Ok(variable.cloned()),
+            Err(ControlFlow::Error(error)) => Err(error),
         }
     }
 
-    pub fn sub(&self) -> Self {
-        Self {
-            variables: self.variables.clone(),
-            added: Vec::new(),
+    #[inline(always)]
+    pub fn call_fn<I: ToFnInput>(
+        &mut self,
+        ident: impl Into<String>,
+        input: I,
+        scope: &Scope<T>,
+    ) -> Result<Variable, Error> {
+        let params = input.to_fn_parameters();
+        let input = input.to_fn_input();
+
+        let fn_signature = FnSignature {
+            ident: ident.into(),
+            params,
+        };
+
+        let fn_type = scope.get_fn(&fn_signature).map_err(|err| {
+            Error::from_raw(
+                err,
+                format!("{} {:?}", fn_signature.ident, fn_signature.params),
+            )
+        })?;
+
+        fn_type.run(&Span::new(0, 0), self, scope, input)
+    }
+
+    #[inline(always)]
+    pub fn eval_block(
+        &mut self,
+        block: &Block,
+        scope: &mut Scope<T>,
+    ) -> Result<Variable, ControlFlow> {
+        for stmt in &block.stmts {
+            self.eval_stmt(stmt, scope)?;
         }
-    }
 
-    pub fn get(&self, var: &String) -> Option<&(MemoryID, ValueType)> {
-        self.variables.get(var)
-    }
-
-    pub fn add(&mut self, id: MemoryID) {
-        self.added.push(id);
-    }
-
-    pub fn insert(&mut self, var: &String, id: MemoryID, ty: ValueType) {
-        self.variables.insert(var.clone(), (id, ty));
-        self.added.push(id);
-    }
-
-    pub fn drop(self, runtime: &mut Runtime) -> Result<(), SpannedRuntimeError> {
-        for id in self.added {
-            if let Some(val) = runtime.memory.remove(&id)? {
-                val.drop(runtime)?;
-            }
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Runtime {
-    pub(crate) memory: Memory,
-}
-
-impl Runtime {
-    pub fn new() -> Self {
-        Self {
-            memory: Memory::new(),
+        match &block.expr {
+            Some(expr) => self.eval_expr(expr, scope),
+            None => Ok(Variable::unspecified(Union::from(()))),
         }
     }
 }

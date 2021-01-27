@@ -1,5 +1,5 @@
 [package]
-name = "ferrous"
+name = "iron"
 version = "0.1.0"
 authors = ["= <hjalte.nannestad@gmail.com>"]
 edition = "2018"
@@ -8,8 +8,8 @@ build = "build.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
-lalrpop = { version = "0.19.0", features = ["lexer"] }
+lalrpop = { version = "0.19", features = ["lexer"] }
 
 [dependencies]
-lalrpop-util = "0.19.0"
+lalrpop-util = "0.19"
 regex = "1"

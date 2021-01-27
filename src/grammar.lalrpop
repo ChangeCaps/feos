@@ -1,215 +1,476 @@
 use crate::ast::*;
-use crate::memory::{Value, ValueType};
+use crate::span::*;
+use crate::variant::*;
+use crate::fn_storage::*;
+use lalrpop_util::*;
+use std::sync::Arc;
 
 grammar;
 
-pub ProgramBlock: ProgramBlock = {
-    Statement* => ProgramBlock { statements: <> },	
+
+
+pub Block: Block = {
+    ExprBlock,
+    UnitBlock,
 }
 
-Block: Block = {
-	<statements:Statement*> <expression:Expression> => Block {
-		statements,
-		expression: Some(Box::new(expression)),
-	},
+
+
+pub ExprBlock: Block = {
+    <stmts:Spanned<Stmt>*> <expr:Spanned<ExprWithoutBlock>> => Block {
+        stmts,
+        expr: Some(expr),
+    },
+    <stmts:Spanned<Stmt>*> <expr:Spanned<ExprWithBlock>> => Block {
+        stmts,
+        expr: Some(expr),
+    },
 }
 
-UnitBlock: Block = {
-	<statements:Statement*> => Block {
-		statements,
-		expression: None,
-	}
-}
 
-Statement: Statement = {
-    <lo:@L> <statement:_Statement> <hi:@R> => Statement {
-        statement,
-        span: Span::new(lo, hi),
+
+pub UnitBlock: Block = {
+    <stmts:Spanned<Stmt>*> => Block {
+        stmts,
+        expr: None,
     }
 }
 
-_Statement: _Statement = {
-    LetStatement => <>,
-	ExpressionStatement => <>,
+
+
+Stmt: Stmt = {
+    ExprStmt,
+    LetStmt,
+    FnDefStmt,
 }
 
-LetStatement: _Statement = {
-	"let" <ident:Ident> (":" ValueType)? "=" <val:Expression> ";" => _Statement::Let(ident, val),
+
+
+LetStmt: Stmt = {
+    "let" <ident:Ident> <ty:(":" <UnionType>)?> "=" <expr:Spanned<Expr>> ";" => Stmt::Let {
+        ident,
+        ty,
+        expr,
+    }
 }
 
-ExpressionStatement: _Statement = {
-	<Expression> ";" => _Statement::Expression(<>),
-	<ExpressionWithUnitBlock> => _Statement::Expression(<>),
+
+
+ExprStmt: Stmt = {
+    <Spanned<ExprWithoutBlock>> ";" => Stmt::Expr {
+        expr: <>,
+    },
+    <Spanned<ExprWithBlock>> ";" => Stmt::Expr {
+        expr: <>,
+    },
+    <Spanned<ExprWithUnitBlock>> ";"? => Stmt::Expr {
+        expr: <>,
+    },
 }
 
-Expression: Expression = {
-	ExpressionWithBlock => <>,
-	ExpressionWithoutBlock => <>,
-}
 
-T0: Expression = {
-	"(" <Expression> ")" => <>,
 
-	<lo:@L> <lit:Literal> <hi:@R> => Expression {
-		expression: _Expression::Literal(lit),	
-		span: Span::new(lo, hi),
-	},
+FnDefStmt: Stmt = {
+    "fn" <ident:FnIdent> "(" <parameters:Vec<(<Ident> <(":" <UnionType>)?>)>> ")" "{" <block:Spanned<Block>> "}" => {
+        let mut parameter_types = Vec::with_capacity(parameters.len());
+        let mut parameter_idents = Vec::with_capacity(parameters.len());
 
-	<lo:@L> <ident:Ident> <hi:@R> => Expression { 
-		expression: _Expression::Dereferece(
-			Box::new(
-				Expression { 
-					expression: _Expression::Variable(ident),  
-					span: Span::new(lo, hi),
-				}
-			)
-		),
-		span: Span::new(lo, hi),
-	}
-}
+        for (ident, ty) in parameters.into_iter() {
+            parameter_types.push(FnParameter::from(ty));
+            parameter_idents.push(ident);
+        }
 
-T1: Expression = {
-	<lo:@L> "*" <expr:T1> <hi:@R> => Expression {
-		expression: _Expression::Dereferece(Box::new(expr)),
-		span: Span::new(lo, hi),
-	},
+        let fn_signature = FnSignature {
+            ident,
+            params: parameter_types,
+        };
 
-	<lo:@L> "&" <expr:T1> <hi:@R> => Expression {
-		expression: _Expression::Reference(Box::new(expr)),
-		span: Span::new(lo, hi),
-	},
-
-	<lo:@L> "!" <expr:T1> <hi:@R> => Expression {
-		expression: _Expression::Not(Box::new(expr)),
-		span: Span::new(lo, hi),
-	},
-
-	T0 => <>,
-}
-
-T2: Expression = {
-	<lo:@L> <lhs:T2> "==" <rhs:T1> <hi:@R> => Expression {
-		expression: _Expression::Equal(Box::new(lhs), Box::new(rhs)),	
-		span: Span::new(lo, hi),
-	},
-
-	<lo:@L> <lhs:T2> "!=" <rhs:T1> <hi:@R> => Expression {
-		expression: _Expression::Not(
-			Box::new(Expression {
-				expression: _Expression::Equal(Box::new(lhs), Box::new(rhs)),	
-				span: Span::new(lo, hi),
-			})
-		),
-		span: Span::new(lo, hi),
-	},
-
-	T1 => <>,
-}
-
-T3: Expression = {
-	<lo:@L> <target:T3> "=" <value:T2> <hi:@R> => Expression {
-		expression: _Expression::Assign(Box::new(target), Box::new(value)),
-		span: Span::new(lo, hi),
-	},
-
-	<lo:@L> "return" <return_value:T2> <hi:@R> => Expression {
-		expression: _Expression::Return(Box::new(return_value)),
-		span: Span::new(lo, hi),
-	},
-
-	T2 => <>
-}
-
-ExpressionWithoutBlock: Expression = {
-	T3 => <>,
-}
-
-BlockExpression: Expression = {
-	<lo:@L> "{" <block:Block> "}" <hi:@R> => Expression {
-		expression: _Expression::Block(block),
-		span: Span::new(lo, hi),
-	},
-}
-
-IfExpression: Expression = {
-	<lo:@L> "if" <check:Expression> <block:BlockExpression> "else" <else_block:BlockExpression> <hi:@R> => Expression {
-		expression: _Expression::If(Box::new(check), Box::new(block), Some(Box::new(else_block))),
-		span: Span::new(lo, hi),
-	},
-
-	<lo:@L> "if" <check:Expression> <block:BlockExpression> "else" <else_block:IfExpression> <hi:@R> => Expression {
-		expression: _Expression::If(Box::new(check), Box::new(block), Some(Box::new(else_block))),
-		span: Span::new(lo, hi),
-	},
-}
-
-ExpressionWithBlock: Expression = {
-	BlockExpression => <>,	
-	IfExpression => <>,
-}
-
-UnitBlockExpression: Expression = {
-	<lo:@L> "{" <block:UnitBlock> "}" <hi:@R> => Expression {
-		expression: _Expression::Block(block),
-		span: Span::new(lo, hi),
-	},
-}
-
-UnitIfExpression: Expression = {
-	<lo:@L> "if" <check:Expression> <block:UnitBlockExpression> <hi:@R> => Expression {
-		expression: _Expression::If(Box::new(check), Box::new(block), None),
-		span: Span::new(lo, hi),
-	},
-
-	<lo:@L> "if" <check:Expression> <block:UnitBlockExpression> "else" <else_block:UnitBlockExpression> <hi:@R> => Expression {
-		expression: _Expression::If(Box::new(check), Box::new(block), Some(Box::new(else_block))),
-		span: Span::new(lo, hi),
-	},
-
-	<lo:@L> "if" <check:Expression> <block:UnitBlockExpression> "else" <else_block:UnitIfExpression> <hi:@R> => Expression {
-		expression: _Expression::If(Box::new(check), Box::new(block), Some(Box::new(else_block))),
-		span: Span::new(lo, hi),
-	},
-}
-
-ExpressionWithUnitBlock: Expression = {
-	UnitBlockExpression => <>,
-	UnitIfExpression => <>,
-}
-
-pub Literal: Value = {
-    r"-?[0-9]+\.[0-9]+" => Value::F32(<>.parse().unwrap()),
-
-    r"-?[0-9]+" => Value::I32(<>.parse().unwrap()),
-
-    r#""[^"]*""# => Value::String(<>[1..<>.len() - 1].to_string()),
-
-	"true" => Value::Bool(true),
-	"false" => Value::Bool(false),
-}
-
-pub Path: Path = {
-    <modules:(<Ident> "::")*> <target:Ident> => {
-        Path {
-            modules,
-            target,
+        Stmt::FnDef {
+            fn_signature,
+            block: Arc::new(block),
+            parameter_idents: Arc::new(parameter_idents),
+            return_type: FnParameter::Unspecified,
         }
     }
 }
 
-Ident: String = {
-    r"[_a-zA-Z][_a-zA-Z0-9]*" => <>.to_string(),
+
+
+Expr: Expr = {
+    ExprWithBlock,
+    ExprWithoutBlock,
 }
 
-ValueType: ValueType = {
-	"i32" => ValueType::I32,
-	"f32" => ValueType::F32,
-	"str" => ValueType::String,
-	"(" ")" => ValueType::Null,
-	"&" <ValueType> => ValueType::Ref(Box::new(<>)),
-	"dyn" <mut vec:(<Ident> "+")+> <last:Ident> => {
-		vec.push(last);
 
-		ValueType::TraitObject(vec)
-	}
+
+ExprWithBlock: Expr = {
+    ExprBlockExpr,
+    ExprIfExpr,
+}
+
+
+
+ExprWithUnitBlock: Expr = {
+    UnitBlockExpr,
+    UnitIfExpr,
+    ForLoopExpr,
+    WhileLoopExpr,
+}
+
+
+
+ExprWithoutBlock: Expr = {
+    AssignExpr,
+}
+
+
+
+BlockExpr: Expr = {
+    ExprBlockExpr,
+    UnitBlockExpr,
+}
+
+
+
+ExprBlockExpr: Expr = {
+    "{" <block:ExprBlock> "}" => Expr::Block {
+        block: Box::new(block),
+    },
+}
+
+
+
+UnitBlockExpr: Expr = {
+    "{" <block:UnitBlock> "}" => Expr::Block {
+        block: Box::new(block),
+    }
+}
+
+
+
+GroupedExpr: Expr = {
+    "(" <expr:Expr> ")" => expr,
+}
+
+
+
+VariableExpr: Expr = {
+    <ident:Spanned<Ident>> => Expr::Variable {
+        ident,
+    },
+}
+
+
+
+LiteralExpr: Expr = {
+    Literal => Expr::Literal { 
+        variant: <>
+    },
+}
+
+
+
+LowestTierExpr: Expr = {
+    GroupedExpr,
+    VariableExpr,
+    LiteralExpr,
+}
+
+
+
+FnCallExpr: Expr = {
+    <ident:Spanned<Ident>> "(" <params:Vec<Spanned<Expr>>> ")" => Expr::FnCall {
+        ident,
+        params,
+    },
+    LowestTierExpr,
+}
+
+
+
+MethodCallExpr: Expr = {
+    <caller:Spanned<MethodCallExpr>> "." <ident:Spanned<Ident>> "(" <params:Vec<Spanned<Expr>>> ")" => { 
+        Expr::MethodCall {
+            ident,
+            caller: Box::new(caller),
+            params,
+        }
+    },
+    FnCallExpr,
+}
+
+
+
+IndexExpr: Expr = {
+    <expr:Spanned<IndexExpr>> <lo:@L> "[" <index:Spanned<Expr>> "]" <hi:@R> => Expr::FnCall {
+        ident: Spanned {
+            inner: "[]".into(),
+            span: Span::new(lo, hi),
+        },
+        params: vec![expr, index],
+    },
+    MethodCallExpr,
+}
+
+
+
+ReferenceExpr: Expr = {
+    "&" <Spanned<PrefixOpExpr>> => Expr::Reference {
+        expr: Box::new(<>),
+    },
+}
+
+
+
+DereferenceExpr: Expr = {
+    "*" <Spanned<PrefixOpExpr>> => Expr::Dereference {
+        expr: Box::new(<>),
+    },
+}
+
+
+
+NegationExpr: Expr = {
+    "!" <expr:Spanned<PrefixOpExpr>> => Expr::NegationOp {
+        expr: Box::new(expr),
+    }
+}
+
+
+
+PrefixOpExpr: Expr = {
+    ReferenceExpr,
+    DereferenceExpr,
+    NegationExpr,
+    IndexExpr,
+}
+
+
+
+BinOpExpr<T, U, V>: Expr = {
+    <lhs:Spanned<U>> <lo:@L> <op:T> <hi:@R> <rhs:Spanned<V>> => Expr::BinOp{
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
+        op: Spanned {
+            inner: op.into(),
+            span: Span::new(lo, hi),
+        },
+    }
+}
+
+
+
+FactorExpr: Expr = {
+    BinOpExpr<"*", FactorExpr, PrefixOpExpr>,
+    BinOpExpr<"/", FactorExpr, PrefixOpExpr>,
+    PrefixOpExpr,
+}
+
+
+
+AddSubExpr: Expr = {
+    BinOpExpr<"+", AddSubExpr, FactorExpr>,
+    BinOpExpr<"-", AddSubExpr, FactorExpr>,
+    FactorExpr
+}
+
+
+
+ModExpr: Expr = {
+    BinOpExpr<"%", ModExpr, AddSubExpr>,
+    AddSubExpr,
+}
+
+
+
+ComparisonExpr: Expr = {
+    BinOpExpr<">", ComparisonExpr, ModExpr>,
+    BinOpExpr<"<", ComparisonExpr, ModExpr>,
+    BinOpExpr<">=", ComparisonExpr, ModExpr>,
+    BinOpExpr<"<=", ComparisonExpr, ModExpr>,
+    BinOpExpr<"==", ComparisonExpr, ModExpr>,
+    ModExpr,
+}
+
+
+
+OpAssignExpr<T>: Expr = {
+    <target:Spanned<ComparisonExpr>> <op:Spanned<T>> <variable:Spanned<ComparisonExpr>> => Expr::Assign {
+        target: Box::new(target.clone()),
+        variable: Box::new(
+            Spanned {
+                span: variable.span,
+                inner: Expr::BinOp {
+                    lhs: Box::new(target),
+                    rhs: Box::new(variable),
+                    op: Spanned {
+                        inner: op[0..1].into(),
+                        span: op.span,
+                    }
+                },
+            }
+        )
+    },
+}
+
+
+
+AssignExpr: Expr = {
+    <target:Spanned<ComparisonExpr>> "=" <variable:Spanned<ComparisonExpr>> => Expr::Assign {
+        target: Box::new(target),
+        variable: Box::new(variable),
+    },
+    OpAssignExpr<"+=">,
+    OpAssignExpr<"-=">,
+    OpAssignExpr<"*=">,
+    OpAssignExpr<"/=">,
+    ComparisonExpr,
+}
+
+
+
+IfExpr: Expr = {
+    ExprIfExpr,
+    UnitIfExpr,
+}
+
+
+
+ExprIfExpr: Expr = {
+    "if" <check:Spanned<Expr>> "{" <block:Spanned<ExprBlock>> "}" "else" <else_block:Spanned<ExprBlockExpr>> => Expr::If {
+        check: Box::new(check),
+        block: Box::new(block),
+        else_block: Some(Box::new(else_block)),
+    },
+    "if" <check:Spanned<Expr>> "{" <block:Spanned<ExprBlock>> "}" "else" <else_block:Spanned<ExprIfExpr>> => Expr::If {
+        check: Box::new(check),
+        block: Box::new(block),
+        else_block: Some(Box::new(else_block)),
+    },
+}
+
+
+
+UnitIfExpr: Expr = {
+    "if" <check:Spanned<Expr>> "{" <block:Spanned<UnitBlock>> "}" => Expr::If {
+        check: Box::new(check),
+        block: Box::new(block),
+        else_block: None,
+    },
+    "if" <check:Spanned<Expr>> "{" <block:Spanned<UnitBlock>> "}" "else" <else_block:Spanned<UnitBlockExpr>> => Expr::If {
+        check: Box::new(check),
+        block: Box::new(block),
+        else_block: Some(Box::new(else_block)),
+    },
+    "if" <check:Spanned<Expr>> "{" <block:Spanned<UnitBlock>> "}" "else" <else_block:Spanned<UnitIfExpr>> => Expr::If {
+        check: Box::new(check),
+        block: Box::new(block),
+        else_block: Some(Box::new(else_block)),
+    },
+}
+
+
+
+ForLoopExpr: Expr = {
+    "for" <ident:Spanned<Ident>> "in" <expr:Spanned<Expr>> "{" <block:Spanned<UnitBlock>> "}" => Expr::ForLoop {
+        ident,
+        expr: Box::new(expr),
+        block: Box::new(block),
+    }
+}
+
+
+
+WhileLoopExpr: Expr = {
+    "while" <expr:Spanned<Expr>> "{" <block:Spanned<UnitBlock>> "}" => Expr::WhileLoop {
+        expr: Box::new(expr),
+        block: Box::new(block),
+    }
+}
+
+
+
+Spanned<T>: Spanned<T> = {
+    <lo:@L> <inner:T> <hi:@R> => Spanned {
+        inner,
+        span: Span::new(lo, hi),
+    }
+}
+
+
+
+Vec<T>: Vec<T> = {
+    <mut vec:(<T> ",")*> <last:T?> => {
+        if let Some(t) = last {
+            vec.push(t);
+        }
+
+        vec
+    }
+}
+
+
+
+Literal: Union = {
+    r#"-?[0-9]+"# =>? Ok(
+        Union::Int(
+            <>.parse::<i32>()
+                .map_err(|_err| ParseError::User {
+                    error: "Integer too large",
+                })?
+        )
+    ),
+    r#"-?[0-9]+\.[0-9]+"# =>? Ok(
+        Union::Float(
+            <>.parse::<f32>()
+                .map_err(|_err| ParseError::User {
+                    error: "Integer too large",
+                })?
+        )
+    ),
+    "true" => Union::Bool(true),
+    "false" => Union::Bool(false),
+    r#""[^"]*""# => Union::String(Arc::new(<>[1..<>.len() - 1].into())),
+}
+
+
+
+UnionType: UnionType = {
+    "i32" => UnionType::Int,
+    "f32" => UnionType::Float,
+    "bool" => UnionType::Bool,
+    "string" => UnionType::String,
+    "&" <UnionType> => UnionType::Reference(Box::new(<>)),
+}
+
+
+
+Ident: String = {
+    r#"[_a-zA-Z][_a-zA-Z0-9]*"# => <>.into(),
+}
+
+
+
+OpIdent<T>: String = {
+    T => <>.into(),
+}
+
+
+
+FnIdent: String = {
+    Ident,
+    OpIdent<"!">,
+    OpIdent<"+">,
+    OpIdent<"-">,
+    OpIdent<"*">,
+    OpIdent<"/">,
+    OpIdent<"%">,
+    OpIdent<">">,
+    OpIdent<"<">,
+    OpIdent<"||">,
+    OpIdent<"&&">,
+    OpIdent<">=">,
+    OpIdent<"<=">,
+    OpIdent<"==">,
+    OpIdent<"[]">,
 }
