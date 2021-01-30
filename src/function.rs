@@ -3,7 +3,6 @@ use crate::control_flow::*;
 use crate::embedded_ctx_fn::*;
 use crate::embedded_fn::*;
 use crate::error::*;
-use crate::fn_storage::*;
 use crate::runtime::*;
 use crate::scope::*;
 use crate::span::*;
@@ -20,9 +19,8 @@ pub(crate) fn by_value<T: Variant + Clone>(data: Union) -> T {
         let ref_t = unsafe { std::mem::transmute::<_, &T>(&ref_str) };
         ref_t.clone()
     } else {
-        data.downcast_ref::<T>()
+        data.downcast::<T>()
             .expect(&format!("cast: {}", std::any::type_name::<T>()))
-            .clone()
     }
 }
 
@@ -31,7 +29,7 @@ pub enum FnType<T> {
     Native {
         block: Arc<Spanned<Block>>,
         parameter_idents: Arc<Vec<String>>,
-        return_type: FnParameter,
+        return_type: UnionType,
     },
     EmbeddedFn(EmbeddedFn),
     EmbeddedCtxFn(EmbeddedCtxFn<T>),
@@ -67,7 +65,7 @@ impl<T> FnType<T> {
         &self,
         span: &Span,
         runtime: &mut Runtime<T>,
-        scope: &Scope<T>,
+        scope: &mut Scope<T>,
         input: Vec<Variable>,
     ) -> Result<Variable, Error> {
         match self {
@@ -76,13 +74,13 @@ impl<T> FnType<T> {
                 parameter_idents,
                 return_type,
             } => {
-                let mut scope = scope.sub_no_vars();
+                scope.sub(true);
 
                 for (ident, union_cell) in parameter_idents.iter().zip(input.into_iter()) {
-                    scope.register_variable(ident, union_cell);
+                    scope.push(ident, union_cell);
                 }
 
-                let returned = match runtime.eval_block(block, &mut scope) {
+                let returned = match runtime.eval_block(block, scope) {
                     Ok(v) => Ok(v),
                     Err(err) => match err {
                         ControlFlow::Return(v) => Ok(v),
@@ -90,14 +88,16 @@ impl<T> FnType<T> {
                     },
                 }?;
 
-                if let FnParameter::Specified(return_type) = return_type {
+                scope.rev_sub();
+
+                if let UnionType::Any = return_type {
+                    Ok(returned)
+                } else {
                     if *return_type == returned.ty() {
                         Ok(returned)
                     } else {
                         Err(Error::new(ErrorKind::TypeMismatch, &runtime.source, block.span).into())
                     }
-                } else {
-                    Ok(returned)
                 }
             }
             Self::EmbeddedFn(embedded_fn) => match embedded_fn.run(input) {

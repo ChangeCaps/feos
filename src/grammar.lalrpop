@@ -76,7 +76,12 @@ FnDefStmt: Stmt = {
         let mut parameter_idents = Vec::with_capacity(parameters.len());
 
         for (ident, ty) in parameters.into_iter() {
-            parameter_types.push(FnParameter::from(ty));
+			let ty = match ty {
+				Some(ty) => ty,
+				None => UnionType::Any,
+			};
+
+            parameter_types.push(ty);
             parameter_idents.push(ident);
         }
 
@@ -89,7 +94,7 @@ FnDefStmt: Stmt = {
             fn_signature,
             block: Arc::new(block),
             parameter_idents: Arc::new(parameter_idents),
-            return_type: FnParameter::Unspecified,
+            return_type: UnionType::Any,
         }
     }
 }
@@ -115,6 +120,7 @@ ExprWithUnitBlock: Expr = {
     UnitIfExpr,
     ForLoopExpr,
     WhileLoopExpr,
+	TryCatchExpr,
 }
 
 
@@ -202,12 +208,13 @@ MethodCallExpr: Expr = {
 
 
 IndexExpr: Expr = {
-    <expr:Spanned<IndexExpr>> <lo:@L> "[" <index:Spanned<Expr>> "]" <hi:@R> => Expr::FnCall {
+    <expr:Spanned<IndexExpr>> <lo:@L> "[" <index:Spanned<Expr>> "]" <hi:@R> => Expr::MethodCall {
         ident: Spanned {
             inner: "[]".into(),
             span: Span::new(lo, hi),
         },
-        params: vec![expr, index],
+		caller: Box::new(expr),
+        params: vec![index],
     },
     MethodCallExpr,
 }
@@ -367,6 +374,15 @@ UnitIfExpr: Expr = {
         block: Box::new(block),
         else_block: Some(Box::new(else_block)),
     },
+}
+
+
+
+TryCatchExpr: Expr = {
+	"try" "{" <try_block:UnitBlock> "}" "catch" "{" <catch_block:UnitBlock> "}" => Expr::TryCatch {
+		try_block: Box::new(try_block),
+		catch_block: Box::new(catch_block),
+	}
 }
 
 

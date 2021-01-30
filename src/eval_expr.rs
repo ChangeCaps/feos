@@ -30,11 +30,9 @@ impl<'a, T> Runtime<'a, T> {
                     }
                 }
 
-                target.map_mut(|v| {
-                    *v = variant.cloned();
-                });
+                target.set(variant.into_inner());
 
-                Ok(().into())
+                Ok(Variable::specified(UnionCell::new(())))
             }
 
             Expr::NegationOp { expr } => {
@@ -49,16 +47,14 @@ impl<'a, T> Runtime<'a, T> {
 
                 match scope.get_fn(&fn_signature) {
                     Ok(op_fn) => {
-                        Ok(op_fn.run(&expr.span, self, scope, params.to_fn_input())?)
-                    },
-                    Err(_) => {
-                        variable.map(|u| 
-                            match u {
-                                Union::Bool(b) => Ok(Variable::specified(Union::Bool(!b))),
-                                _ => Err(Error::from_raw(ErrorKind::UndefinedFunction, "!").into())
-                            }
-                        )
+                        Ok(op_fn
+                            .clone()
+                            .run(&expr.span, self, scope, params.to_fn_input())?)
                     }
+                    Err(_) => variable.map(|u| match u {
+                        Union::Bool(b) => Ok(Variable::specified(Union::Bool(!b))),
+                        _ => Err(Error::from_raw(ErrorKind::UndefinedFunction, "!").into()),
+                    }),
                 }
             }
 
@@ -66,21 +62,32 @@ impl<'a, T> Runtime<'a, T> {
                 let lhs = self.eval_expr(lhs, scope)?;
                 let rhs = self.eval_expr(rhs, scope)?;
 
-                let params = vec![lhs.clone(), rhs.clone()];
-
                 let fn_signature = FnSignature {
                     ident: op.inner.clone(),
-                    params: params.to_fn_parameters(),
+                    params: vec![lhs.ty(), rhs.ty()],
                 };
 
                 match scope.get_fn(&fn_signature) {
                     Ok(op_fn) => {
-                        Ok(op_fn.run(&op.span, self, scope, params.to_fn_input())?)
-                    },
+                        let params = vec![lhs, rhs];
+
+                        Ok(op_fn
+                            .clone()
+                            .run(&op.span, self, scope, params.to_fn_input())?)
+                    }
                     Err(_) => {
-                        match crate::internal_binop::internal_binop(lhs.cloned(), rhs.cloned(), op) {
+                        match crate::internal_binop::internal_binop(
+                            lhs.into_inner(),
+                            rhs.into_inner(),
+                            op,
+                        ) {
                             Some(v) => Ok(Variable::specified(v)),
-                            None => Err(Error::new(ErrorKind::UndefinedFunction, &self.source, op.span).into()),
+                            None => {
+                                Err(
+                                    Error::new(ErrorKind::UndefinedFunction, &self.source, op.span)
+                                        .into(),
+                                )
+                            }
                         }
                     }
                 }
@@ -111,7 +118,7 @@ impl<'a, T> Runtime<'a, T> {
             Expr::Dereference { expr } => {
                 let variable = self.eval_expr(expr, scope)?;
 
-                if let Union::Reference(mut referenced) = variable.cloned() {
+                if let Union::Reference(mut referenced) = variable.into_inner() {
                     Ok(referenced.get_shared())
                 } else {
                     Err(Error::new(ErrorKind::InvalidDerefTarget, &self.source, expr.span).into())
@@ -119,9 +126,13 @@ impl<'a, T> Runtime<'a, T> {
             }
 
             Expr::Block { block } => {
-                let mut scope = scope.sub();
+                scope.sub(false);
 
-                self.eval_block(block, &mut scope)
+                let ret = self.eval_block(block, scope);
+
+                scope.rev_sub();
+
+                ret
             }
 
             Expr::If {
@@ -195,6 +206,14 @@ impl<'a, T> Runtime<'a, T> {
                 }
             }
 
+            Expr::TryCatch {
+                try_block,
+                catch_block,
+            } => match self.eval_block(try_block, scope) {
+                Ok(_) => Ok(Variable::specified(Union::Unit(()))),
+                Err(_) => self.eval_block(catch_block, scope),
+            },
+
             Expr::WhileLoop { expr, block } => {
                 loop {
                     let check = self.eval_expr(expr, scope)?.map(|v| match v.as_bool() {
@@ -203,7 +222,11 @@ impl<'a, T> Runtime<'a, T> {
                     })?;
 
                     if check {
+                        scope.sub(false);
+
                         self.eval_block(block, scope)?;
+
+                        scope.rev_sub();
                     } else {
                         break;
                     }
@@ -246,18 +269,19 @@ impl<'a, T> Runtime<'a, T> {
                         iter_next.run(&expr.span, self, scope, params.clone().to_fn_input())?;
 
                     let option = variable
-                        .cloned()
-                        .downcast_ref::<Option<Union>>()
-                        .ok_or(Error::new(ErrorKind::TypeMismatch, &self.source, expr.span))?
-                        .clone();
+                        .into_inner()
+                        .downcast::<Option<Union>>()
+                        .ok_or(Error::new(ErrorKind::TypeMismatch, &self.source, expr.span))?;
 
                     match option {
                         Some(union) => {
-                            let mut scope = scope.sub();
+                            scope.sub(false);
 
-                            scope.register_variable(&**ident, Variable::unspecified(union));
+                            scope.push(ident.inner.clone(), Variable::unspecified(union));
 
-                            self.eval_block(block, &mut scope)?;
+                            self.eval_block(block, scope)?;
+
+                            scope.rev_sub();
                         }
                         None => break,
                     }

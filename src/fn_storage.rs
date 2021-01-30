@@ -1,39 +1,14 @@
 use crate::error::*;
 use crate::function::*;
 use crate::variant::*;
+use fnv::FnvHashMap;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum FnParameter {
-    Specified(UnionType),
-    Unspecified,
-}
-
-impl FnParameter {
-    pub fn from(ty: Option<UnionType>) -> Self {
-        match ty {
-            Some(ty) => Self::Specified(ty),
-            None => Self::Unspecified,
-        }
-    }
-
-    pub fn from_embedded_fn_parameter<T>() -> Self
-    where
-        T: EmbeddedFnParameter<T> + Any,
-    {
-        if TypeId::of::<T>() == TypeId::of::<Union>() {
-            FnParameter::Unspecified
-        } else {
-            FnParameter::Specified(T::union_type())
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FnSignature {
     pub ident: String,
-    pub params: Vec<FnParameter>,
+    pub params: Vec<UnionType>,
 }
 
 impl FnSignature {
@@ -49,23 +24,23 @@ impl FnSignature {
 }
 
 pub trait IntoFnParameters<P, R, U> {
-    fn fn_parameters() -> Vec<FnParameter>;
+    fn fn_parameters() -> Vec<UnionType>;
 
-    fn into_fn_parameters(&self) -> Vec<FnParameter> {
+    fn into_fn_parameters(&self) -> Vec<UnionType> {
         Self::fn_parameters()
     }
 }
 
 #[derive(Debug)]
 struct FnStorageBranch<T> {
-    branches: HashMap<FnParameter, FnStorageBranch<T>>,
+    branches: FnvHashMap<UnionType, FnStorageBranch<T>>,
     end: Option<FnType<T>>,
 }
 
 impl<T> FnStorageBranch<T> {
     pub fn new() -> Self {
         Self {
-            branches: HashMap::new(),
+            branches: FnvHashMap::default(),
             end: None,
         }
     }
@@ -83,7 +58,8 @@ impl<T> FnStorageBranch<T> {
         self.end = branch.end;
     }
 
-    pub fn register_fn<I: Iterator<Item = FnParameter>>(
+    #[inline(always)]
+    pub fn register_fn<I: Iterator<Item = UnionType>>(
         &mut self,
         mut iter: I,
         fn_type: FnType<T>,
@@ -104,14 +80,15 @@ impl<T> FnStorageBranch<T> {
         }
     }
 
-    pub fn get_fn<'a, I: Iterator<Item = &'a FnParameter>>(
+    #[inline(always)]
+    pub fn get_fn<'a, I: Iterator<Item = &'a UnionType>>(
         &self,
         mut iter: I,
     ) -> Result<&FnType<T>, ErrorKind> {
         match iter.next() {
             Some(p) => match self.branches.get(&p) {
                 Some(b) => b.get_fn(iter),
-                None => match self.branches.get(&FnParameter::Unspecified) {
+                None => match self.branches.get(&UnionType::Any) {
                     Some(b) => b.get_fn(iter),
                     None => Err(ErrorKind::UndefinedFunction),
                 },
@@ -135,13 +112,13 @@ impl<T> Clone for FnStorageBranch<T> {
 
 #[derive(Debug)]
 pub struct FnStorage<T> {
-    functions: HashMap<String, FnStorageBranch<T>>,
+    functions: FnvHashMap<String, FnStorageBranch<T>>,
 }
 
 impl<T> FnStorage<T> {
     pub fn new() -> Self {
         Self {
-            functions: HashMap::new(),
+            functions: HashMap::default(),
         }
     }
 
@@ -156,6 +133,7 @@ impl<T> FnStorage<T> {
         }
     }
 
+    #[inline(always)]
     pub fn register_fn(
         &mut self,
         fn_signature: FnSignature,
@@ -167,6 +145,7 @@ impl<T> FnStorage<T> {
             .register_fn(fn_signature.params.into_iter(), fn_type)
     }
 
+    #[inline(always)]
     pub fn get_fn(&self, fn_signature: &FnSignature) -> Result<&FnType<T>, ErrorKind> {
         match self.functions.get(&fn_signature.ident) {
             Some(b) => b.get_fn(fn_signature.params.iter()),
@@ -184,24 +163,4 @@ impl<T> Clone for FnStorage<T> {
 }
 
 #[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn from_embedded_fn_parameter() {
-        assert_eq!(
-            FnParameter::from_embedded_fn_parameter::<Mut<i32>>(),
-            FnParameter::Specified(UnionType::Reference(Box::new(UnionType::Int))),
-        );
-
-        assert_eq!(
-            FnParameter::from_embedded_fn_parameter::<Union>(),
-            FnParameter::Unspecified,
-        );
-
-        assert_eq!(
-            FnParameter::from_embedded_fn_parameter::<bool>(),
-            FnParameter::Specified(UnionType::Bool),
-        );
-    }
-}
+mod test {}

@@ -19,7 +19,7 @@ impl<'a, T> Runtime<'a, T> {
 
     pub fn run(&mut self, program: &Block, scope: &mut Scope<T>) -> Result<Union, Error> {
         match self.eval_block(&program, scope) {
-            Ok(variable) | Err(ControlFlow::Return(variable)) => Ok(variable.cloned()),
+            Ok(variable) | Err(ControlFlow::Return(variable)) => Ok(variable.into_inner()),
             Err(ControlFlow::Error(error)) => Err(error),
         }
     }
@@ -29,7 +29,7 @@ impl<'a, T> Runtime<'a, T> {
         &mut self,
         ident: impl Into<String>,
         input: I,
-        scope: &Scope<T>,
+        scope: &mut Scope<T>,
     ) -> Result<Variable, Error> {
         let params = input.to_fn_parameters();
         let input = input.to_fn_input();
@@ -39,12 +39,15 @@ impl<'a, T> Runtime<'a, T> {
             params,
         };
 
-        let fn_type = scope.get_fn(&fn_signature).map_err(|err| {
-            Error::from_raw(
-                err,
-                format!("{} {:?}", fn_signature.ident, fn_signature.params),
-            )
-        })?;
+        let fn_type = scope
+            .get_fn(&fn_signature)
+            .map_err(|err| {
+                Error::from_raw(
+                    err,
+                    format!("{} {:?}", fn_signature.ident, fn_signature.params),
+                )
+            })?
+            .clone();
 
         fn_type.run(&Span::new(0, 0), self, scope, input)
     }

@@ -13,3 +13,9 @@ lalrpop = { version = "0.19", features = ["lexer"] }
 [dependencies]
 lalrpop-util = "0.19"
 regex = "1"
+fnv = "1.0"
+
+[profile.release]
+debug = true
+lto = "fat"
+codegen-units = 1

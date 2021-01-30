@@ -9,7 +9,7 @@ pub struct Block {
     pub expr: Option<Spanned<Expr>>,
 }
 
-#[derive(Clone ,Debug)]
+#[derive(Clone, Debug)]
 pub enum Stmt {
     Let {
         ident: String,
@@ -25,7 +25,7 @@ pub enum Stmt {
         fn_signature: FnSignature,
         block: Arc<Spanned<Block>>,
         parameter_idents: Arc<Vec<String>>,
-        return_type: FnParameter,
+        return_type: UnionType,
     },
 }
 
@@ -81,6 +81,11 @@ pub enum Expr {
         ident: Spanned<String>,
         caller: Box<Spanned<Expr>>,
         params: Vec<Spanned<Expr>>,
+    },
+
+    TryCatch {
+        try_block: Box<Block>,
+        catch_block: Box<Block>,
     },
 
     WhileLoop {

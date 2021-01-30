@@ -1,9 +1,7 @@
-let x = 10000000;
+let x = 23.2;
 
-while x > 0 {
-    x -= 1;
-
-    if x % 100000 == 0 {
-        print(x);
-    }
+try {
+	x += 2;
+} catch {
+	print("failed");
 }

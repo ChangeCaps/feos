@@ -1,5 +1,5 @@
-use crate::function::*;
 use crate::fn_storage::*;
+use crate::function::*;
 use crate::variant::*;
 use std::sync::Arc;
 
@@ -66,8 +66,8 @@ macro_rules! def_register {
             F: Fn(&mut T, $($ident,)*) -> R + 'static,
         {
             #[inline(always)]
-            fn fn_parameters() -> Vec<FnParameter> {
-                vec![$(FnParameter::from_embedded_fn_parameter::<$ident>(),)*]
+            fn fn_parameters() -> Vec<UnionType> {
+                vec![$($ident::union_type(),)*]
             }
         }
 
@@ -108,16 +108,16 @@ macro_rules! def_register {
 
         impl<T, M, $($ident,)* R, F> IntoFnParameters<(&mut T, &mut M, $(&$ident,)*), R, EmbCtxFn> for F
         where
-            $($ident: EmbeddedFnParameter<$ident> + 'static,)*
+            $($ident: Variant,)*
             M: Variant,
             R: Variant,
             F: Fn(&mut T, &mut M, $($ident,)*) -> R + 'static,
         {
             #[inline(always)]
-            fn fn_parameters() -> Vec<FnParameter> {
+            fn fn_parameters() -> Vec<UnionType> {
                 vec![
-                    FnParameter::Specified(UnionType::Reference(Box::new(UnionType::from::<M>()))),
-                    $(FnParameter::from_embedded_fn_parameter::<$ident>(),)*
+                    UnionType::Reference(Box::new(UnionType::from::<M>())),
+                    $(UnionType::from::<$ident>(),)*
                 ]
             }
         }

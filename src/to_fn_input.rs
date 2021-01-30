@@ -1,11 +1,9 @@
-use crate::fn_storage::*;
 use crate::function::*;
 use crate::variant::*;
-use std::any::TypeId;
 
 pub trait ToFnInput {
     fn to_fn_input(self) -> Vec<Variable>;
-    fn to_fn_parameters(&self) -> Vec<FnParameter>;
+    fn to_fn_parameters(&self) -> Vec<UnionType>;
 }
 
 impl ToFnInput for Vec<Variable> {
@@ -13,10 +11,8 @@ impl ToFnInput for Vec<Variable> {
         self
     }
 
-    fn to_fn_parameters(&self) -> Vec<FnParameter> {
-        self.iter()
-            .map(|f| FnParameter::Specified(f.ty()))
-            .collect()
+    fn to_fn_parameters(&self) -> Vec<UnionType> {
+        self.iter().map(|f| f.ty()).collect()
     }
 }
 
@@ -37,16 +33,12 @@ macro_rules! def_to_fn_input {
                 input
             }
 
-            fn to_fn_parameters(&self) -> Vec<FnParameter> {
+            fn to_fn_parameters(&self) -> Vec<UnionType> {
                 #[allow(unused_mut)]
                 let mut params = Vec::new();
 
                 $(
-                    if TypeId::of::<$ident>() == TypeId::of::<Union>() {
-                        params.push(FnParameter::Unspecified);
-                    } else {
-                        params.push(FnParameter::Specified($ident::union_type()));
-                    }
+                    params.push(UnionType::from::<$ident>());
                 )*
 
                 params

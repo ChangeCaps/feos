@@ -25,7 +25,7 @@ impl<'a, T> Runtime<'a, T> {
                     }
                 }
 
-                scope.register_variable(ident, variable);
+                scope.push(ident.clone(), variable);
 
                 Ok(())
             }

@@ -48,7 +48,11 @@ impl<T> Module<T> {
         self.sub_modules.insert(ident.into(), module)
     }
 
-    pub fn register_fn<P, R, F, U>(&mut self, ident: impl Into<String>, f: F) -> Result<(), ErrorKind>
+    pub fn register_fn<P, R, F, U>(
+        &mut self,
+        ident: impl Into<String>,
+        f: F,
+    ) -> Result<(), ErrorKind>
     where
         F: IntoEmbeddedFn<T, P, R, U>,
         F: IntoFnParameters<P, R, U>,
@@ -73,6 +77,7 @@ impl<T> Module<T> {
         self.functions.register_fn(fn_signature, fn_type)
     }
 
+    #[inline(always)]
     pub fn get_fn(&self, fn_signature: &FnSignature) -> Result<&FnType<T>, ErrorKind> {
         self.functions.get_fn(fn_signature)
     }

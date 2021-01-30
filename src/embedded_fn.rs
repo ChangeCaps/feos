@@ -59,8 +59,8 @@ macro_rules! def_register {
             F: Fn($($ident,)*) -> R + 'static,
         {
             #[inline(always)]
-            fn fn_parameters() -> Vec<FnParameter> {
-                vec![$(FnParameter::from_embedded_fn_parameter::<$ident>(),)*]
+            fn fn_parameters() -> Vec<UnionType> {
+                vec![$($ident::union_type(),)*]
             }
         }
 
@@ -101,16 +101,16 @@ macro_rules! def_register {
 
         impl<M, $($ident,)* R, F> IntoFnParameters<(&mut M, $(&$ident,)*), R, EmbFn> for F
         where
-            $($ident: EmbeddedFnParameter<$ident> + 'static,)*
+            $($ident: Variant,)*
             M: Variant,
             R: Variant,
             F: Fn(&mut M, $($ident,)*) -> R + 'static,
         {
             #[inline(always)]
-            fn fn_parameters() -> Vec<FnParameter> {
+            fn fn_parameters() -> Vec<UnionType> {
                 vec![
-                    FnParameter::Specified(UnionType::Reference(Box::new(UnionType::from::<M>()))),
-                    $(FnParameter::from_embedded_fn_parameter::<$ident>(),)*
+                    UnionType::Reference(Box::new(UnionType::from::<M>())),
+                    $(UnionType::from::<$ident>(),)*
                 ]
             }
         }

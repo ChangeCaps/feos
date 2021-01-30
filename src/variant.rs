@@ -14,28 +14,34 @@ pub trait Variant: Any + Sync + Send + 'static {
 }
 
 impl<T: Clone + Send + Sync + Any> Variant for T {
+    #[inline(always)]
     fn type_id(&self) -> TypeId {
         TypeId::of::<T>()
     }
 
+    #[inline(always)]
     fn as_any(&self) -> &dyn Any {
         self
     }
 
+    #[inline(always)]
     fn as_mut_any(&mut self) -> &mut dyn Any {
         self
     }
 
+    #[inline(always)]
     fn clone_into_union(&self) -> Union {
         Union::from(self.clone())
     }
 
+    #[inline(always)]
     fn type_name(&self) -> &str {
         std::any::type_name::<Self>()
     }
 }
 
 impl std::fmt::Debug for Box<dyn Variant> {
+    #[inline(always)]
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         let x: &dyn Variant = &**self;
         write!(formatter, "Variant: {:?}", x.as_any().type_id())?;
@@ -44,6 +50,7 @@ impl std::fmt::Debug for Box<dyn Variant> {
     }
 }
 
+#[inline(always)]
 fn unsafe_try_cast<A: Any, B: Any>(a: A) -> Option<B> {
     if TypeId::of::<B>() == a.type_id() {
         // SAFETY: Just checked we have the right type. We explicitly forget the
@@ -74,6 +81,7 @@ pub enum Union {
 }
 
 impl std::fmt::Display for Union {
+    #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Int(v) => write!(f, "{}", v)?,
@@ -91,6 +99,7 @@ impl std::fmt::Display for Union {
 }
 
 impl Clone for Union {
+    #[inline(always)]
     fn clone(&self) -> Self {
         match self {
             Self::Int(i) => Self::Int(*i),
@@ -106,6 +115,7 @@ impl Clone for Union {
 }
 
 impl Union {
+    #[inline(always)]
     pub fn new<T: Variant>(variant: T) -> Self {
         // union
         if TypeId::of::<T>() == TypeId::of::<Self>() {
@@ -150,6 +160,7 @@ impl Union {
         Self::Variant(Box::new(variant))
     }
 
+    #[inline(always)]
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Self::String(s) => Some(s),
@@ -157,10 +168,87 @@ impl Union {
         }
     }
 
+    #[inline(always)]
     pub fn from<T: Variant>(variant: T) -> Self {
         Self::new(variant)
     }
 
+    #[inline(always)]
+    pub fn downcast<T: Variant>(self) -> Option<T> {
+        // union
+        if TypeId::of::<T>() == TypeId::of::<Union>() {
+            return unsafe_try_cast(self);
+        }
+
+        // i32
+        if TypeId::of::<T>() == TypeId::of::<i32>() {
+            return match self {
+                Self::Int(v) => unsafe_try_cast(v),
+                _ => None,
+            };
+        }
+
+        // f32
+        if TypeId::of::<T>() == TypeId::of::<f32>() {
+            return match self {
+                Self::Float(v) => unsafe_try_cast(v),
+                _ => None,
+            };
+        }
+
+        // bool
+        if TypeId::of::<T>() == TypeId::of::<bool>() {
+            return match self {
+                Self::Bool(v) => unsafe_try_cast(v),
+                _ => None,
+            };
+        }
+
+        // string
+        if TypeId::of::<T>() == TypeId::of::<String>() {
+            return match self {
+                Self::String(v) => {
+                    let string: String = v.to_string();
+                    unsafe_try_cast(string)
+                }
+                _ => None,
+            };
+        }
+        if TypeId::of::<T>() == TypeId::of::<SharedString>() {
+            return match self {
+                Self::String(v) => unsafe_try_cast(v.clone()),
+                _ => None,
+            };
+        }
+
+        // unit
+        if TypeId::of::<T>() == TypeId::of::<()>() {
+            return match self {
+                Self::Unit(v) => unsafe_try_cast(v),
+                _ => None,
+            };
+        }
+
+        // type
+        if TypeId::of::<T>() == TypeId::of::<UnionType>() {
+            return match self {
+                Self::Type(v) => unsafe_try_cast(v),
+                _ => None,
+            };
+        }
+
+        // variant
+        match self {
+            Self::Variant(variant) => {
+                let b: Option<Box<T>> = unsafe_try_cast(variant);
+
+                b.map(|inner| *inner)
+            }
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
     pub fn downcast_ref<T: Variant + 'static>(&self) -> Option<&T> {
         // union
         if TypeId::of::<T>() == TypeId::of::<Union>() {
@@ -231,6 +319,7 @@ impl Union {
         }
     }
 
+    #[inline(always)]
     pub fn downcast_mut<T: Variant + 'static>(&mut self) -> Option<&mut T> {
         // union
         if TypeId::of::<T>() == TypeId::of::<Union>() {
@@ -302,6 +391,7 @@ impl Union {
         }
     }
 
+    #[inline(always)]
     pub fn ty(&self) -> UnionType {
         match self {
             Self::Int(_) => UnionType::Int,
@@ -315,6 +405,7 @@ impl Union {
         }
     }
 
+    #[inline(always)]
     pub fn as_int(&self) -> Option<i32> {
         match self {
             Self::Int(v) => Some(*v),
@@ -322,6 +413,7 @@ impl Union {
         }
     }
 
+    #[inline(always)]
     pub fn as_float(&self) -> Option<f32> {
         match self {
             Self::Float(v) => Some(*v),
@@ -329,6 +421,7 @@ impl Union {
         }
     }
 
+    #[inline(always)]
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Self::Bool(b) => Some(*b),
@@ -348,9 +441,11 @@ pub enum UnionType {
     Unit,
     Type,
     Variant(TypeId),
+    Any,
 }
 
 impl std::fmt::Display for UnionType {
+    #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Int => write!(f, "i32")?,
@@ -361,6 +456,7 @@ impl std::fmt::Display for UnionType {
             Self::Unit => write!(f, "()")?,
             Self::Type => write!(f, "type")?,
             Self::Variant(type_id) => write!(f, "variant<{:?}>", type_id)?,
+            Self::Any => write!(f, "any")?,
         }
 
         Ok(())
@@ -368,7 +464,12 @@ impl std::fmt::Display for UnionType {
 }
 
 impl UnionType {
+    #[inline(always)]
     pub fn from<T: Variant>() -> Self {
+        if TypeId::of::<T>() == TypeId::of::<Union>() {
+            return Self::Any;
+        }
+
         // i32
         if TypeId::of::<T>() == TypeId::of::<i32>() {
             return Self::Int;
@@ -423,6 +524,7 @@ pub struct Mut<T> {
 }
 
 impl<T: Variant> Mut<T> {
+    #[inline(always)]
     pub fn cloned(&self) -> Option<T>
     where
         T: Clone,
@@ -433,10 +535,12 @@ impl<T: Variant> Mut<T> {
         }
     }
 
+    #[inline(always)]
     pub fn cell(self) -> UnionCell {
         UnionCell::Shared(self.lock)
     }
 
+    #[inline(always)]
     pub fn map<R, F: FnMut(&T) -> R>(&self, mut f: F) -> R {
         match self.lock.read() {
             Ok(union) => match union.downcast_ref::<T>() {
@@ -447,6 +551,7 @@ impl<T: Variant> Mut<T> {
         }
     }
 
+    #[inline(always)]
     pub fn map_mut<R, F: FnMut(&mut T) -> R>(&mut self, mut f: F) -> R {
         match self.lock.write() {
             Ok(mut union) => match union.downcast_mut::<T>() {
@@ -466,15 +571,16 @@ pub enum UnionCell {
 }
 
 impl UnionCell {
+    #[inline(always)]
     pub fn new<T: Variant>(union: T) -> Self {
         if TypeId::of::<T>() == TypeId::of::<UnionCell>() {
             unsafe_try_cast(union).unwrap()
         } else {
             Self::Owned(Union::from(union))
         }
-
     }
 
+    #[inline(always)]
     pub fn into_shared(self) -> Self {
         match self {
             Self::Owned(union) => Self::Shared(Arc::new(RwLock::new(union))),
@@ -482,6 +588,7 @@ impl UnionCell {
         }
     }
 
+    #[inline(always)]
     pub fn make_shared(&mut self) {
         let union = match self {
             Self::Owned(union) => union.clone(),
@@ -491,6 +598,7 @@ impl UnionCell {
         *self = Self::Shared(Arc::new(RwLock::new(union)));
     }
 
+    #[inline(always)]
     pub fn get_shared(&mut self) -> Self {
         self.make_shared();
 
@@ -500,6 +608,7 @@ impl UnionCell {
         }
     }
 
+    #[inline(always)]
     pub fn clone_shared(&self) -> Self {
         match self {
             Self::Shared(lock) => Self::Shared(lock.clone()),
@@ -507,6 +616,7 @@ impl UnionCell {
         }
     }
 
+    #[inline(always)]
     pub fn is_owned(&self) -> bool {
         match self {
             Self::Owned(_) => true,
@@ -514,6 +624,7 @@ impl UnionCell {
         }
     }
 
+    #[inline(always)]
     pub fn get_lock<T>(&mut self) -> Mut<T> {
         self.make_shared();
 
@@ -526,18 +637,38 @@ impl UnionCell {
         }
     }
 
+    #[inline(always)]
     pub fn is_shared(&self) -> bool {
         !self.is_owned()
     }
 
+    #[inline(always)]
     pub fn cloned(&self) -> Union {
         self.map(|v| v.clone())
     }
 
+    #[inline(always)]
+    pub fn into_inner(self) -> Union {
+        match self {
+            Self::Shared(shared) => shared.read().unwrap().clone(),
+            Self::Owned(union) => union,
+        }
+    }
+
+    #[inline(always)]
     pub fn ty(&self) -> UnionType {
         self.map(|v| v.ty())
     }
 
+    #[inline(always)]
+    pub fn set(&mut self, union: Union) {
+        match self {
+            Self::Owned(owned) => *owned = union,
+            Self::Shared(shared) => *shared.write().unwrap() = union,
+        }
+    }
+
+    #[inline(always)]
     pub fn map<T, F: FnMut(&Union) -> T>(&self, mut f: F) -> T {
         match self {
             Self::Owned(union) => f(union),
@@ -549,6 +680,7 @@ impl UnionCell {
         }
     }
 
+    #[inline(always)]
     pub fn map_mut<T, F: FnMut(&mut Union) -> T>(&mut self, mut f: F) -> T {
         match self {
             Self::Owned(union) => f(union),
@@ -562,14 +694,16 @@ impl UnionCell {
 }
 
 impl Clone for UnionCell {
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self::Owned(self.cloned())
     }
 }
 
 impl From<Union> for UnionCell {
+    #[inline(always)]
     fn from(union: Union) -> Self {
-        Self::new(union)
+        Self::Owned(union)
     }
 }
 
@@ -587,6 +721,7 @@ impl Variable {
         }
     }
 
+    #[inline(always)]
     pub fn specified(union: impl Into<UnionCell>) -> Self {
         Self {
             type_specified: true,
@@ -594,6 +729,7 @@ impl Variable {
         }
     }
 
+    #[inline(always)]
     pub fn unspecified(union: impl Into<UnionCell>) -> Self {
         Self {
             type_specified: false,
@@ -601,6 +737,7 @@ impl Variable {
         }
     }
 
+    #[inline(always)]
     pub fn clone_shared(&self) -> Self {
         Self {
             type_specified: self.type_specified.clone(),
@@ -608,6 +745,7 @@ impl Variable {
         }
     }
 
+    #[inline(always)]
     pub fn get_shared(&mut self) -> Self {
         Self {
             type_specified: self.type_specified.clone(),
@@ -615,6 +753,12 @@ impl Variable {
         }
     }
 
+    #[inline(always)]
+    pub fn into_inner(self) -> Union {
+        self.union.into_inner()
+    }
+
+    #[inline(always)]
     pub fn union_type(&self) -> UnionType {
         self.union.ty()
     }
@@ -623,23 +767,16 @@ impl Variable {
 impl std::ops::Deref for Variable {
     type Target = UnionCell;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.union
     }
 }
 
 impl std::ops::DerefMut for Variable {
+    #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.union
-    }
-}
-
-impl From<()> for Variable {
-    fn from(_: ()) -> Self {
-        Self {
-            type_specified: false,
-            union: UnionCell::new(Union::from(())),
-        }
     }
 }
 
